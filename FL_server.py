@@ -36,9 +36,11 @@ if __name__ == '__main__':
     FL_ROUNDS = 5
     LOCAL_EPOCH = 5
     LOCAL_BATCHSIZE = 10
+    MODEL_POISON = True
 
 
-    CM = ClientsManager('mnist', True, CLIENTS_NUM)
+
+    CM = ClientsManager('mnist', True, CLIENTS_NUM, modelPoison=MODEL_POISON)
 
     print(CM.clients)
     net = Net()
@@ -71,15 +73,41 @@ if __name__ == '__main__':
         #查看全局模型在测试集上的准确率
         with torch.no_grad():
             correct, total = 0, 0
+            res = {x:[0,0] for x in range(10)}
             net.load_state_dict(globalParams, strict=True)
             for data in CM.testLoader:
                 inputs, labels = data[0].cuda(), data[1].cuda()
                 outputs = net(inputs)
                 _, predicted = torch.max(outputs.data, 1)
+                labels = labels.cpu()
+                predicted = predicted.cpu()
+                for j in range(len(labels)):
+                    res[int(labels[j])][0] += 1            
+                    if predicted[j] == labels[j]:
+                        res[int(labels[j])][1] += 1
                 total += labels.size(0)
                 correct += (predicted==labels).sum().item()
             print('# 第 %d 轮学习的全局模型准确率为： %.2f %%' % (i+1, 100*correct/total))
-    
+            for key, val in res.items():
+                print('# 类别 %d 的识别准确率为： %.2f %%' % (key, 100*val[1]/val[0]))
+
+        #查看模型投毒攻击的目标识别率，将0识别为8的准确率
+        with torch.no_grad():
+            correct, wrong, total = 0, 0, 0
+            net.load_state_dict(globalParams, strict=True)
+            for data in CM.testLoader:
+                inputs, labels = data[0].cuda(), data[1].cuda()
+                outputs = net(inputs)
+                _, predicted = torch.max(outputs.data, 1)
+                for j in range(len(labels)):
+                    if labels[j] == 0:
+                        total += 1
+                        if predicted[j] == 8:
+                            correct += 1
+                        else:
+                            wrong += 1
+            print('# 第 %d 轮模型投毒攻击中 0-》8 的准确率为： %.2f %%' % (i+1, 100*correct/total))
+            print('# 第 %d 轮模型投毒攻击中 0-》0 的准确率为： %.2f %%' % (i+1, 100*wrong/total))
 
     
 

@@ -4,16 +4,31 @@ from FL_data import DataSplit
 import torch
 
 class Client():
-    def __init__(self, id, localTrainSet, device) -> None:
+    def __init__(self, id, localTrainSet, device, modelPoison) -> None:
         self.device = device
         self.id = id
         self.updateNum = 0
         self.localTrainSet = localTrainSet
         self.trainLoader = None
         self.localParams = None
-    
+        self.modelPoison = modelPoison
+
+        #模型投毒，改变数据标签,目标将 0 识别为 8
+        if self.modelPoison:
+            localTrainSet_Poisoned = []
+            for item in self.localTrainSet:
+                if item[1] == 0:
+                    localTrainSet_Poisoned.append((item[0], 8))
+                else:
+                    localTrainSet_Poisoned.append(item)
+            self.localTrainSet = localTrainSet_Poisoned
+            del localTrainSet_Poisoned
+
+
     def localUpdate(self, Epoch, batchsize, Net, lossFun, optimizer, globalParams):
         print('# client{} 开始进行本地更新 #'.format(self.id))
+        if self.modelPoison:
+            print('# client{} 为恶意端 #'.format(self.id))
         self.trainLoader = DataLoader(self.localTrainSet, batch_size=batchsize, shuffle=True, num_workers=0)
         Net.load_state_dict(globalParams, strict=True)
         self.updateNum += 1
@@ -30,17 +45,26 @@ class Client():
                 running_loss += loss.item()
                 num += 1
             print('client%d epoch%d loss: %.4f' % (self.id, epoch+1, running_loss/num))
+        
+        #根据缩放因子反向放大上传的模型参数
+        if self.modelPoison and self.id == 1:
+            poisonParams = {}
+            for key, var in Net.state_dict().items():
+                poisonParams[key] = 5*(var-globalParams[key]) + globalParams[key]
+            print('# 返回恶意模型参数 #')
+            return poisonParams
 
         return Net.state_dict()
 
 
 class ClientsManager():
-    def __init__(self, dataSetName, isIID, clientsNum, device=None) -> None:
+    def __init__(self, dataSetName, isIID, clientsNum, device=None, modelPoison=False) -> None:
         self.dataSetName = dataSetName
         self.isIID = isIID
         self.clientsNum = clientsNum
         self.clients = {}
         self.testLoader = None
+        self.modelPoison = modelPoison
         
         if device:
             self.device = device
@@ -53,7 +77,7 @@ class ClientsManager():
         dataSplit = DataSplit(self.dataSetName, self.isIID, self.clientsNum)
         self.testLoader = DataLoader(dataSplit.testset, batch_size=10, shuffle=True, num_workers=0)
         for i in range(self.clientsNum):
-            client = Client( i+1, dataSplit.getTrainSet(i+1), self.device)
+            client = Client( i+1, dataSplit.getTrainSet(i+1), self.device, (self.modelPoison if i==0 else False))
             self.clients['client{}'.format(i+1)] = client
 
 if __name__ == '__main__':
