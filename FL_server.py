@@ -36,11 +36,11 @@ if __name__ == '__main__':
     FL_ROUNDS = 5
     LOCAL_EPOCH = 5
     LOCAL_BATCHSIZE = 10
-    MODEL_POISON = True
+    MODEL_POISON = False
 
 
 
-    CM = ClientsManager('mnist', True, CLIENTS_NUM, modelPoison=MODEL_POISON)
+    CM = ClientsManager('mnist', False, CLIENTS_NUM, modelPoison=MODEL_POISON)
 
     print(CM.clients)
     net = Net()
