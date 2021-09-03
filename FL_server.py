@@ -5,7 +5,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import torchvision
 
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy as np
 from FL_clients import ClientsManager
 
@@ -33,18 +33,18 @@ if __name__ == '__main__':
             return x
 
     CLIENTS_NUM = 5
-    FL_ROUNDS = 5
-    LOCAL_EPOCH = 5
+    FL_ROUNDS = 10
+    LOCAL_EPOCH = 3
     LOCAL_BATCHSIZE = 10
     MODEL_POISON = False
 
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
-
-    CM = ClientsManager('mnist', False, CLIENTS_NUM, modelPoison=MODEL_POISON)
+    CM = ClientsManager('mnist', False, CLIENTS_NUM, device=device, modelPoison=MODEL_POISON)
 
     print(CM.clients)
     net = Net()
-    net.cuda()
+    net.to(device)
 
     lossFun = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(net.parameters())
@@ -76,7 +76,7 @@ if __name__ == '__main__':
             res = {x:[0,0] for x in range(10)}
             net.load_state_dict(globalParams, strict=True)
             for data in CM.testLoader:
-                inputs, labels = data[0].cuda(), data[1].cuda()
+                inputs, labels = data[0].to(device), data[1].to(device)
                 outputs = net(inputs)
                 _, predicted = torch.max(outputs.data, 1)
                 labels = labels.cpu()
@@ -92,22 +92,26 @@ if __name__ == '__main__':
                 print('# 类别 %d 的识别准确率为： %.2f %%' % (key, 100*val[1]/val[0]))
 
         #查看模型投毒攻击的目标识别率，将0识别为8的准确率
-        with torch.no_grad():
-            correct, wrong, total = 0, 0, 0
-            net.load_state_dict(globalParams, strict=True)
-            for data in CM.testLoader:
-                inputs, labels = data[0].cuda(), data[1].cuda()
-                outputs = net(inputs)
-                _, predicted = torch.max(outputs.data, 1)
-                for j in range(len(labels)):
-                    if labels[j] == 0:
-                        total += 1
-                        if predicted[j] == 8:
-                            correct += 1
-                        else:
-                            wrong += 1
-            print('# 第 %d 轮模型投毒攻击中 0-》8 的准确率为： %.2f %%' % (i+1, 100*correct/total))
-            print('# 第 %d 轮模型投毒攻击中 0-》0 的准确率为： %.2f %%' % (i+1, 100*wrong/total))
+        if MODEL_POISON:
+            with torch.no_grad():
+                correct, wrong, total = 0, 0, 0
+                net.load_state_dict(globalParams, strict=True)
+                for data in CM.testLoader:
+                    inputs, labels = data[0].to(device), data[1].to(device)
+                    outputs = net(inputs)
+                    _, predicted = torch.max(outputs.data, 1)
+                    for j in range(len(labels)):
+                        if labels[j] == 0:
+                            total += 1
+                            if predicted[j] == 8:
+                                correct += 1
+                            else:
+                                wrong += 1
+                print('# 第 %d 轮模型投毒攻击中 0-》8 的准确率为： %.2f %%' % (i+1, 100*correct/total))
+                print('# 第 %d 轮模型投毒攻击中 0-》0 的准确率为： %.2f %%' % (i+1, 100*wrong/total))
+    
+    #保存全局模型
+    torch.save(globalParams, './discriminator.pth')
 
     
 
